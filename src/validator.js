@@ -237,7 +237,7 @@ function keyframe_has_t(kf)
 
 class Validator
 {
-    constructor(AjvClass, schema_json, docs_url="https://lottie.github.io/lottie-spec/latest/")
+    constructor(AjvClass, schema_json, docs_url="https://lottie.github.io/lottie-spec/latest")
     {
         this.schema = schema_json;
         this.defs = this.schema["$defs"];
@@ -526,7 +526,30 @@ class Validator
         delete schema.oneOf;
     }
 
-    validate(string)
+    validate_object(data, show_warnings=true)
+    {
+        let errors = [];
+        if ( !this._validate_internal(data) )
+            errors = this._validate_internal.errors
+                .map(e => this._cleaned_error(e, data));
+
+        return errors.filter(err => show_warnings || err.type != "warning").sort((a, b) => {
+            if ( a.path < b.path )
+                return -1;
+            if ( a.path > b.path )
+                return 1;
+            return 0;
+        });
+    }
+
+    validate(data, show_warnings=true)
+    {
+        if ( typeof data == "string" )
+            return this.validate_string(data, show_warnings);
+        return this.validate_object(data, show_warnings);
+    }
+
+    validate_string(string, show_warnings=true)
     {
         var data;
         try {
@@ -544,18 +567,7 @@ class Validator
             ];
         }
 
-        let errors = [];
-        if ( !this._validate_internal(data) )
-            errors = this._validate_internal.errors
-                .map(e => this._cleaned_error(e, data));
-
-        return errors.sort((a, b) => {
-            if ( a.path < b.path )
-                return -1;
-            if ( a.path > b.path )
-                return 1;
-            return 0;
-        });
+        return this.validate_object(data, show_warnings);
     }
 
     _cleaned_error(error, data, prefix="")
@@ -591,6 +603,25 @@ class Validator
     }
 }
 
+function schema_file_name(version=null)
+{
+    return "lottie.schema.json";
+}
 
+function get_schema_path(version=null)
+{
+    const path = require("path");
+    return path.resolve(__dirname, "data", schema_file_name(version));
+}
+
+function get_schema_url(version=null, url_prefix="https://cdn.jsdelivr.net/npm/@lottie-animation-community/lottie-specs/src/data/")
+{
+    return url_prefix + schema_file_name(version);
+}
+
+
+// Node module
 if ( typeof module !== "undefined" )
-    module.exports = {Validator: Validator};
+{
+    module.exports = {Validator, get_schema_path, get_schema_url};
+}

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 const path = require("path");
-const {Validator} = require("../src/validator.js");
+const {Validator, get_schema_path} = require("../src/validator.js");
 const fs = require("fs");
 const ajv2020 = require("ajv/dist/2020");
 
@@ -14,14 +14,17 @@ function show_help()
     process.exit(0);
 }
 
-var schema_path = path.resolve(__dirname, "../src/data/lottie.schema.json");
-var json_file = null
-var args = {
+let schema_path = get_schema_path();
+let json_file = null
+let warnings = true;
+
+let args = {
     "--schema": [1, "Path to the schema", (arg) => { schema_path = arg; }],
     "--help": [0, "Shows help", () => show_help()],
+    "--no-warnings": [0, "Disable warnings", () => { warnings = false; }],
 }
 args["-h"] = args["--help"];
-
+args["-q"] = args["--no-warnings"];
 
 
 for ( let i = 2; i < process.argv.length; )
@@ -53,11 +56,10 @@ if ( json_file === null )
     process.exit(1);
 }
 
-
 const data = fs.readFileSync(json_file, "utf8");
 const schema = JSON.parse(fs.readFileSync(schema_path, "utf8"));
 const validator = new Validator(ajv2020.Ajv2020, schema);
-const errors = validator.validate(data);
+const errors = validator.validate(data, warnings);
 console.log(JSON.stringify(errors, null, 4));
 if ( errors.find(e => e.type == "error") )
     process.exit(1);
