@@ -314,193 +314,201 @@ class Validator
         }
 
         prop_map.finalize();
-        let self = this;
 
         this.validator = new AjvClass({
             allErrors: true,
             verbose: true,
             // inlineRefs: false,
             // strict: false,
-            keywords: [
-                // Ignore custom validators and $version
-                {keyword: ["_docs", "_name", "_docs_name", "$version"]},
-                // ty-based validation switch
-                {
-                    keyword: "ty_oneof",
-                    validate: custom_discriminator("ty", false),
-                },
-                // animated property based on `a`
-                {
-                    keyword: "prop_oneof",
-                    validate: custom_discriminator("a", true),
-                },
-                // Asset validation switch based on structure
-                {
-                    keyword: "asset_oneof",
-                    validate: function validate_asset(schema, data, parent_schema, data_cxt)
-                    {
-                        validate_asset.errors = [];
+            keywords: this.custom_validator_keywords(),
+            schemas: [this.schema]
+        });
+        this._validate_internal = this.validator.getSchema(schema_id);
+    }
 
-                        if ( typeof data != "object" || data === null )
-                            return true;
+    /**
+     * \brief Returns an array for Ajv `keywords`
+     */
+    custom_validator_keywords()
+    {
+        let self = this;
+        return [
+            // Ignore custom validators and $version
+            {keyword: ["_docs", "_name", "_docs_name", "$version"]},
+            // ty-based validation switch
+            {
+                keyword: "ty_oneof",
+                validate: custom_discriminator("ty", false),
+            },
+            // animated property based on `a`
+            {
+                keyword: "prop_oneof",
+                validate: custom_discriminator("a", true),
+            },
+            // Asset validation switch based on structure
+            {
+                keyword: "asset_oneof",
+                validate: function validate_asset(schema, data, parent_schema, data_cxt)
+                {
+                    validate_asset.errors = [];
 
-                        var target_schema = this.getSchema(schema + self.get_asset_ref(data));
-
-                        if ( !target_schema(data, data_cxt) )
-                        {
-                            validate_asset.errors = target_schema.errors;
-                            return false;
-                        }
+                    if ( typeof data != "object" || data === null )
                         return true;
-                    },
-                },
-                // Split position based on `s`
-                {
-                    keyword: "splitpos_oneof",
-                    validate: custom_discriminator("s", false, false),
-                },
-                // Keyframe validation for structure and semantics
-                {
-                    keyword: "keyframe",
-                    validate: function validate_keyframe(schema, data, parent_schema, data_cxt)
+
+                    var target_schema = this.getSchema(schema + self.get_asset_ref(data));
+
+                    if ( !target_schema(data, data_cxt) )
                     {
-                        validate_keyframe.errors = [];
-
-                        var require_io = true;
-                        if ( data.h )
-                            require_io = false;
-
-                        var index = data_cxt.parentData.indexOf(data);
-                        if ( index == data_cxt.parentData.length - 1 )
-                            require_io = false;
-
-                        if ( require_io )
-                        {
-                            for ( var prop of "io" )
-                            {
-                                if ( !("i" in data) )
-                                {
-                                    validate_keyframe.errors.push({
-                                        message: `must have required property 'i'`,
-                                        type: "error",
-                                        instancePath: data_cxt.instancePath,
-                                        parentSchema: parent_schema,
-                                    });
-                                }
-                            }
-                        }
-
-                        if ( index > 0 )
-                        {
-                            var prev_kf = data_cxt.parentData[index-1];
-                            if ( keyframe_has_t(prev_kf) && typeof data.t == "number" )
-                            {
-                                if ( data.t < prev_kf.t )
-                                {
-                                    validate_keyframe.errors.push({
-                                        message: `keyframe 't' must be in ascending order`,
-                                        type: "error",
-                                        instancePath: data_cxt.instancePath,
-                                        parentSchema: parent_schema,
-                                    });
-                                }
-                                else if ( data.t == prev_kf.t && index > 1 )
-                                {
-                                    var prev_prev = data_cxt.parentData[index-2];
-                                    if ( keyframe_has_t(prev_prev) && data.t == prev_prev.t )
-                                    {
-                                        validate_keyframe.errors.push({
-                                            message: `there can be at most 2 keyframes with the same 't' value`,
-                                            type: "error",
-                                            instancePath: data_cxt.instancePath,
-                                            parentSchema: parent_schema,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-
-                        return validate_keyframe.errors.length == 0;
+                        validate_asset.errors = target_schema.errors;
+                        return false;
                     }
+                    return true;
                 },
-                // More user-friendly error for enums
+            },
+            // Split position based on `s`
+            {
+                keyword: "splitpos_oneof",
+                validate: custom_discriminator("s", false, false),
+            },
+            // Keyframe validation for structure and semantics
+            {
+                keyword: "keyframe",
+                validate: function validate_keyframe(schema, data, parent_schema, data_cxt)
                 {
-                    keyword: "enum_oneof",
-                    validate: function validate_enum(schema, data, parent_schema, data_cxt)
-                    {
-                        validate_enum.errors = [];
-                        for ( let value of schema )
-                            if ( value.const === data )
-                                return true;
+                    validate_keyframe.errors = [];
 
-                        validate_enum.errors.push({
-                            message: `${data} is not a valid enumeration value`,
-                            type: "error",
-                            instancePath: data_cxt.instancePath,
-                            parentSchema: parent_schema,
-                        });
-                        return false;
-                    },
-                },
-                // Validate layers refId point to valid assets
-                {
-                    keyword: "reference_asset",
-                    validate: function validate_asset_reference(schema, data, parent_schema, data_ctx)
-                    {
-                        validate_asset_reference.errors = [];
+                    var require_io = true;
+                    if ( data.h )
+                        require_io = false;
 
-                        if ( Array.isArray(data_ctx.rootData.assets) )
+                    var index = data_cxt.parentData.indexOf(data);
+                    if ( index == data_cxt.parentData.length - 1 )
+                        require_io = false;
+
+                    if ( require_io )
+                    {
+                        for ( var prop of "io" )
                         {
-                            for ( let asset of data_ctx.rootData.assets )
+                            if ( !("i" in data) )
                             {
-                                if ( asset.id === data )
-                                {
-                                    // TODO: Validate asset type?
-                                    return true;
-                                }
-                            }
-                        }
-
-                        validate_asset_reference.errors.push({
-                            message: `${JSON.stringify(data)} is not a valid asset id`,
-                            type: "error",
-                            instancePath: data_ctx.instancePath,
-                            parentSchema: parent_schema,
-                        });
-                        return false;
-                    },
-                },
-                // Adds warnings for unknown properties
-                {
-                    keyword: "warn_extra_props",
-                    validate: function warn_extra_props(schema, data, parent_schema, data_cxt)
-                    {
-                        warn_extra_props.errors = [];
-
-                        if ( typeof data != "object" || data === null )
-                            return true;
-
-                        for ( let prop of Object.keys(data) )
-                        {
-                            if ( !schema.has(prop) )
-                            {
-                                warn_extra_props.errors.push({
-                                    message: `has unknown property '${prop}'`,
-                                    type: "warning",
-                                    warning: "property",
+                                validate_keyframe.errors.push({
+                                    message: `must have required property 'i'`,
+                                    type: "error",
                                     instancePath: data_cxt.instancePath,
                                     parentSchema: parent_schema,
                                 });
                             }
                         }
+                    }
 
-                        return warn_extra_props.errors.length == 0;
-                    },
+                    if ( index > 0 )
+                    {
+                        var prev_kf = data_cxt.parentData[index-1];
+                        if ( keyframe_has_t(prev_kf) && typeof data.t == "number" )
+                        {
+                            if ( data.t < prev_kf.t )
+                            {
+                                validate_keyframe.errors.push({
+                                    message: `keyframe 't' must be in ascending order`,
+                                    type: "error",
+                                    instancePath: data_cxt.instancePath,
+                                    parentSchema: parent_schema,
+                                });
+                            }
+                            else if ( data.t == prev_kf.t && index > 1 )
+                            {
+                                var prev_prev = data_cxt.parentData[index-2];
+                                if ( keyframe_has_t(prev_prev) && data.t == prev_prev.t )
+                                {
+                                    validate_keyframe.errors.push({
+                                        message: `there can be at most 2 keyframes with the same 't' value`,
+                                        type: "error",
+                                        instancePath: data_cxt.instancePath,
+                                        parentSchema: parent_schema,
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    return validate_keyframe.errors.length == 0;
+                }
+            },
+            // More user-friendly error for enums
+            {
+                keyword: "enum_oneof",
+                validate: function validate_enum(schema, data, parent_schema, data_cxt)
+                {
+                    validate_enum.errors = [];
+                    for ( let value of schema )
+                        if ( value.const === data )
+                            return true;
+
+                    validate_enum.errors.push({
+                        message: `${data} is not a valid enumeration value`,
+                        type: "error",
+                        instancePath: data_cxt.instancePath,
+                        parentSchema: parent_schema,
+                    });
+                    return false;
                 },
-            ],
-            schemas: [this.schema]
-        });
-        this._validate_internal = this.validator.getSchema(schema_id);
+            },
+            // Validate layers refId point to valid assets
+            {
+                keyword: "reference_asset",
+                validate: function validate_asset_reference(schema, data, parent_schema, data_ctx)
+                {
+                    validate_asset_reference.errors = [];
+
+                    if ( Array.isArray(data_ctx.rootData.assets) )
+                    {
+                        for ( let asset of data_ctx.rootData.assets )
+                        {
+                            if ( asset.id === data )
+                            {
+                                // TODO: Validate asset type?
+                                return true;
+                            }
+                        }
+                    }
+
+                    validate_asset_reference.errors.push({
+                        message: `${JSON.stringify(data)} is not a valid asset id`,
+                        type: "error",
+                        instancePath: data_ctx.instancePath,
+                        parentSchema: parent_schema,
+                    });
+                    return false;
+                },
+            },
+            // Adds warnings for unknown properties
+            {
+                keyword: "warn_extra_props",
+                validate: function warn_extra_props(schema, data, parent_schema, data_cxt)
+                {
+                    warn_extra_props.errors = [];
+
+                    if ( typeof data != "object" || data === null )
+                        return true;
+
+                    for ( let prop of Object.keys(data) )
+                    {
+                        if ( !schema.has(prop) )
+                        {
+                            warn_extra_props.errors.push({
+                                message: `has unknown property '${prop}'`,
+                                type: "warning",
+                                warning: "property",
+                                instancePath: data_cxt.instancePath,
+                                parentSchema: parent_schema,
+                            });
+                        }
+                    }
+
+                    return warn_extra_props.errors.length == 0;
+                },
+            },
+        ];
     }
 
     /**
