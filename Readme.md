@@ -61,3 +61,10 @@ By default `Validator.validate` returns warnings, to suppress them pass `false` 
 
 * NPM: https://www.npmjs.com/package/@lottie-animation-community/lottie-specs
 * GitHub: https://github.com/lottie/lottie-specs-js
+
+## Publishing the package
+
+```bash
+npm login
+npm publish --access public
+```

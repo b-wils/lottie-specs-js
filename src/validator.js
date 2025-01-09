@@ -1,3 +1,6 @@
+/**
+ * \returns the `ty` value for the given schema object
+ */
 function extract_schema_ty(schema)
 {
     if ( !schema )
@@ -25,6 +28,9 @@ function extract_schema_ty(schema)
     }
 }
 
+/**
+ * \brief Adds metadata to the schema to link to the docs
+ */
 function patch_docs_links(schema, url, name, docs_name, within_properties)
 {
     if ( typeof(schema) == "object" )
@@ -72,6 +78,9 @@ class PropertyList
     }
 }
 
+/**
+ * \brief Class to gather all properties from a schema in order to warn about missing ones
+ */
 class PropertyMap
 {
     constructor()
@@ -175,13 +184,21 @@ class PropertyMap
     }
 }
 
-
+/**
+ * \brief Formats kebab-case to Title Case
+ */
 function kebab_to_title(kebab)
 {
     return kebab.split("-").map(chunk => chunk.charAt(0).toUpperCase() + chunk.substring(1).toLowerCase()).join(" ");
 }
 
 
+/**
+ * \brief Validation function to switch OneOf objects based on the value of a property
+ * \param propname Name of the property to switch on
+ * \param fail_unknown if \b false, generate a warning rather than an error
+ * \param default_value Value for the property when missing (if \b undefined an error will be raised when missing)
+ */
 function custom_discriminator(propname, fail_unknown, default_value=undefined)
 {
     function validate_fn(schema, data, parent_schema, data_cxt)
@@ -221,6 +238,9 @@ function custom_discriminator(propname, fail_unknown, default_value=undefined)
     return validate_fn;
 }
 
+/**
+ * \brief Marks the schema to use enum validation
+ */
 function patch_schema_enum(schema)
 {
     if ( "oneOf" in schema )
@@ -230,6 +250,9 @@ function patch_schema_enum(schema)
     }
 }
 
+/**
+ * \brief Checks if a keyframe object has a numeric \c t property
+ */
 function keyframe_has_t(kf)
 {
     return typeof kf == "object" && typeof kf.t == "number";
@@ -242,29 +265,31 @@ class Validator
         this.schema = schema_json;
         this.defs = this.schema["$defs"];
         var prop_map = new PropertyMap();
+        let ty_to_patch = [];
 
+        // General patches
         for ( let [cat, sub_schemas] of Object.entries(this.defs) )
         {
             let cat_docs = `${docs_url}/specs/${cat}/`;
             let cat_name = kebab_to_title(cat.replace(/s$/, ""));
             for ( let [obj, sub_schema] of Object.entries(sub_schemas) )
             {
-                let obj_docs = cat_docs;
-                let obj_name = cat_name;
-                if ( sub_schema.type && obj != "base-gradient" )
-                {
-                    obj_docs += "#" + obj;
-                    obj_name = sub_schema.title || kebab_to_title(obj);
-                }
-                patch_docs_links(sub_schema, obj_docs, obj_name, obj_name);
+                this.patch_object(obj, sub_schema, cat_docs, cat_name);
+
+                if ( obj.startsWith("all-") && obj != "all-assets" )
+                    ty_to_patch.push([cat, obj]);
 
                 let id = `#/$defs/${cat}/${obj}`;
                 prop_map.extract_all_properties(sub_schema, id, prop_map.create(id, sub_schema), false);
             }
         }
+
+        // Go through all the ty-based objects and patch them
         let schema_id = this.schema["$id"];
-        this._patch_ty_schema(schema_id, "layers", "all-layers");
-        this._patch_ty_schema(schema_id, "shapes", "all-graphic-elements");
+        for ( let [category, all] of ty_to_patch )
+            this._patch_ty_schema(schema_id, category, all);
+
+        // Patch animated property validation to validate based on `a: 0` or `a: 1`
         for ( let [pname, pschema] of Object.entries(this.defs.properties) )
         {
             if ( pname.endsWith("-property") )
@@ -272,9 +297,11 @@ class Validator
         }
         this.defs.properties["base-keyframe"].keyframe = true;
 
+        // Patches enum validation
         for ( let enum_schema of Object.values(this.defs.constants) )
             patch_schema_enum(enum_schema);
 
+        // Custom validation for assets
         this.defs.assets["all-assets"] = {
             "type": "object",
             "asset_oneof": schema_id,
@@ -287,6 +314,7 @@ class Validator
         }
 
         prop_map.finalize();
+        let self = this;
 
         this.validator = new AjvClass({
             allErrors: true,
@@ -294,15 +322,19 @@ class Validator
             // inlineRefs: false,
             // strict: false,
             keywords: [
+                // Ignore custom validators and $version
                 {keyword: ["_docs", "_name", "_docs_name", "$version"]},
+                // ty-based validation switch
                 {
                     keyword: "ty_oneof",
                     validate: custom_discriminator("ty", false),
                 },
+                // animated property based on `a`
                 {
                     keyword: "prop_oneof",
                     validate: custom_discriminator("a", true),
                 },
+                // Asset validation switch based on structure
                 {
                     keyword: "asset_oneof",
                     validate: function validate_asset(schema, data, parent_schema, data_cxt)
@@ -312,12 +344,7 @@ class Validator
                         if ( typeof data != "object" || data === null )
                             return true;
 
-                        var target_schema;
-
-                        if ( "layers" in data )
-                            target_schema = this.getSchema(schema + "#/$defs/assets/precomposition");
-                        else
-                            target_schema = this.getSchema(schema + "#/$defs/assets/image");
+                        var target_schema = this.getSchema(schema + self.get_asset_ref(data));
 
                         if ( !target_schema(data, data_cxt) )
                         {
@@ -327,10 +354,12 @@ class Validator
                         return true;
                     },
                 },
+                // Split position based on `s`
                 {
                     keyword: "splitpos_oneof",
                     validate: custom_discriminator("s", false, false),
                 },
+                // Keyframe validation for structure and semantics
                 {
                     keyword: "keyframe",
                     validate: function validate_keyframe(schema, data, parent_schema, data_cxt)
@@ -394,6 +423,7 @@ class Validator
                         return validate_keyframe.errors.length == 0;
                     }
                 },
+                // More user-friendly error for enums
                 {
                     keyword: "enum_oneof",
                     validate: function validate_enum(schema, data, parent_schema, data_cxt)
@@ -412,6 +442,7 @@ class Validator
                         return false;
                     },
                 },
+                // Validate layers refId point to valid assets
                 {
                     keyword: "reference_asset",
                     validate: function validate_asset_reference(schema, data, parent_schema, data_ctx)
@@ -439,6 +470,7 @@ class Validator
                         return false;
                     },
                 },
+                // Adds warnings for unknown properties
                 {
                     keyword: "warn_extra_props",
                     validate: function warn_extra_props(schema, data, parent_schema, data_cxt)
@@ -469,9 +501,37 @@ class Validator
             schemas: [this.schema]
         });
         this._validate_internal = this.validator.getSchema(schema_id);
+    }
+
+    /**
+     * \returns the $ref link of an asset based on its data (to determine the right validator)
+     */
+    get_asset_ref(data)
+    {
+        if ( "layers" in data )
+            return "#/$defs/assets/precomposition";
+        return "#/$defs/assets/image";
 
     }
 
+    /**
+     * \brief Applies common patches to a schema object
+     */
+    patch_object(obj, sub_schema, cat_docs, cat_name)
+    {
+        let obj_docs = cat_docs;
+        let obj_name = cat_name;
+        if ( sub_schema.type && obj != "base-gradient" )
+        {
+            obj_docs += "#" + obj;
+            obj_name = sub_schema.title || kebab_to_title(obj);
+        }
+        patch_docs_links(sub_schema, obj_docs, obj_name, obj_name);
+    }
+
+    /**
+     * \brief Adds `ty`-based validation on `all-*` schemas
+     */
     _patch_ty_schema(id_base, category, all)
     {
 
@@ -493,6 +553,9 @@ class Validator
         return found;
     }
 
+    /**
+     * \brief Patches animated property validation to validate based on `a: 0` or `a: 1`
+     */
     _patch_property_schema(schema, id)
     {
         if ( id.endsWith("gradient-property") )
@@ -526,6 +589,12 @@ class Validator
         delete schema.oneOf;
     }
 
+    /**
+     * \brief Validates an object
+     * \param data Object to validate
+     * \param show_warnings If \b true, warnings will be returned, otherwise just errors
+     * \returns Array of errors
+     */
     validate_object(data, show_warnings=true)
     {
         let errors = [];
@@ -542,6 +611,12 @@ class Validator
         });
     }
 
+    /**
+     * \brief Validates an object
+     * \param data Object or JSON string to validate
+     * \param show_warnings If \b true, warnings will be returned, otherwise just errors
+     * \returns Array of errors
+     */
     validate(data, show_warnings=true)
     {
         if ( typeof data == "string" )
@@ -549,6 +624,12 @@ class Validator
         return this.validate_object(data, show_warnings);
     }
 
+    /**
+     * \brief Validates a JSON string
+     * \param data JSON string to validate
+     * \param show_warnings If \b true, warnings will be returned, otherwise just errors
+     * \returns Array of errors
+     */
     validate_string(string, show_warnings=true)
     {
         var data;
@@ -570,24 +651,30 @@ class Validator
         return this.validate_object(data, show_warnings);
     }
 
-    _cleaned_error(error, data, prefix="")
+    /**
+     * \brief Processes an Ajv error and returns a friendlier object
+     * \param error Ajv error object
+     * \param data Object being validated
+     * \return A structured error object containing docs metadata
+     */
+    _cleaned_error(error, data)
     {
         const path_parts = error.instancePath.split('/');
 
         const path_names = [];
-        for (const path_part of path_parts)
+        for ( const path_part of path_parts )
         {
-            if (path_part === '#' || path_part === '')
+            if ( path_part === '#' || path_part === '' )
                 continue;
       
             data = data[path_part];
         
-            if (!data)
+            if ( !data )
                 break;
       
             // Every layer with a type may be named
             // Push a null value if it doesn't exist so display code can handle
-            if (data.ty)
+            if ( data.ty )
                 path_names.push(data.nm);
         }
 
@@ -595,7 +682,7 @@ class Validator
             type: error.type ?? "error",
             warning: error.warning,
             message: (error.parentSchema?._name ?? "Value") + " " + error.message,
-            path: prefix + (error.instancePath ?? ""),
+            path: error.instancePath ?? "",
             name: error.parentSchema?._docs_name ?? "Value",
             docs: error.parentSchema?._docs,
             path_names,
@@ -603,24 +690,36 @@ class Validator
     }
 }
 
+/**
+ * \returns the file name for the schema based on the given parameters
+ * \param version Schema version eg: `1.0`
+ */
 function schema_file_name(version=null)
 {
     return "lottie.schema.json";
 }
 
+/**
+ * \returns File path to the schema
+ * \pre Running on node
+ */
 function get_schema_path(version=null)
 {
     const path = require("path");
     return path.resolve(__dirname, "data", schema_file_name(version));
 }
 
+/**
+ * \returns URL of the schema
+ * \param url_prefix CDN to use
+ */
 function get_schema_url(version=null, url_prefix="https://cdn.jsdelivr.net/npm/@lottie-animation-community/lottie-specs/src/data/")
 {
     return url_prefix + schema_file_name(version);
 }
 
 
-// Node module
+// Node module exports
 if ( typeof module !== "undefined" )
 {
     module.exports = {Validator, get_schema_path, get_schema_url};
