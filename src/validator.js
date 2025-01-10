@@ -693,8 +693,10 @@ class Validator
     /**
      * \brief Processes an Ajv error and returns a friendlier object
      * \param error Ajv error object
-     * \param data Object being validated
+     * \param data Top-level object being validated
+     * \param show_warnings Whether to include warnings
      * \return A structured error object containing docs metadata
+     *         or \b null if the error is to be ignored
      */
     _cleaned_error(error, data, show_warnings)
     {

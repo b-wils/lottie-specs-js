@@ -25,7 +25,7 @@ const errors = validator.validate(data);
 
 Browser:
 ```html
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ajv/8.16.0/ajv2020.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ajv/8.17.1/ajv2020.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@lottie-animation-community/lottie-specs/src/validator.js"></script>
 
 <script>
