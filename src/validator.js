@@ -29,6 +29,16 @@ function extract_schema_ty(schema)
 }
 
 /**
+ * \brief User friendly name for errors for a property schema
+ */
+function get_schema_property_name(schema, pname)
+{
+    if ( schema.title )
+        return " " + schema.title.toLowerCase()
+    return "." + pname;
+}
+
+/**
  * \brief Adds metadata to the schema to link to the docs
  */
 function patch_docs_links(schema, url, name, docs_name, within_properties)
@@ -46,7 +56,7 @@ function patch_docs_links(schema, url, name, docs_name, within_properties)
             {
                 var sub_name = name;
                 if ( within_properties )
-                    sub_name += "." + pname;
+                    sub_name += get_schema_property_name(val, pname);
 
                 patch_docs_links(val, url, sub_name, docs_name, pname == "properties");
             }
@@ -220,7 +230,7 @@ function custom_discriminator(propname, fail_unknown, default_value=undefined)
                 message: `has unknown '${propname}' value ` + JSON.stringify(value),
                 type: fail_unknown ? "error" : "warning",
                 warning: "type",
-                instancePath: data_cxt.instancePath,
+                instancePath: data_cxt.instancePath + "/" + propname,
                 parentSchema: parent_schema,
             }];
             return false;
@@ -245,6 +255,7 @@ function patch_schema_enum(schema)
 {
     if ( "oneOf" in schema )
     {
+        delete schema.enum;
         schema.enum_oneof = schema.oneOf;
         delete schema.oneOf;
     }
@@ -260,26 +271,36 @@ function keyframe_has_t(kf)
 
 class Validator
 {
-    constructor(AjvClass, schema_json, docs_url="https://lottie.github.io/lottie-spec/latest")
+    static default_config = {
+        name_paths: false,
+        docs_url: "https://lottie.github.io/lottie-spec/latest"
+    };
+
+    constructor(AjvClass, schema_json, config={})
     {
+        for ( let [k, v] of Object.entries(Validator.default_config) )
+            if ( config[k] === undefined )
+                config[k] = v;
+
         this.schema = schema_json;
         this.defs = this.schema["$defs"];
+        this.name_paths = config.name_paths;
         var prop_map = new PropertyMap();
         let ty_to_patch = [];
 
         // General patches
         for ( let [cat, sub_schemas] of Object.entries(this.defs) )
         {
-            let cat_docs = `${docs_url}/specs/${cat}/`;
+            let cat_docs = `${config.docs_url}/specs/${cat}/`;
             let cat_name = kebab_to_title(cat.replace(/s$/, ""));
             for ( let [obj, sub_schema] of Object.entries(sub_schemas) )
             {
-                this.patch_object(obj, sub_schema, cat_docs, cat_name);
+                let id = `#/$defs/${cat}/${obj}`;
+                this.patch_object(cat, obj, id, sub_schema, cat_docs, cat_name);
 
                 if ( obj.startsWith("all-") && obj != "all-assets" )
                     ty_to_patch.push([cat, obj]);
 
-                let id = `#/$defs/${cat}/${obj}`;
                 prop_map.extract_all_properties(sub_schema, id, prop_map.create(id, sub_schema), false);
             }
         }
@@ -300,6 +321,7 @@ class Validator
         // Patches enum validation
         for ( let enum_schema of Object.values(this.defs.constants) )
             patch_schema_enum(enum_schema);
+        patch_schema_enum(this.defs.values["int-boolean"])
 
         // Custom validation for assets
         this.defs.assets["all-assets"] = {
@@ -445,7 +467,7 @@ class Validator
                             return true;
 
                     validate_enum.errors.push({
-                        message: `${data} is not a valid enumeration value`,
+                        message: `'${data}' is not a valid enumeration value`,
                         type: "error",
                         instancePath: data_cxt.instancePath,
                         parentSchema: parent_schema,
@@ -499,7 +521,7 @@ class Validator
                                 message: `has unknown property '${prop}'`,
                                 type: "warning",
                                 warning: "property",
-                                instancePath: data_cxt.instancePath,
+                                instancePath: data_cxt.instancePath + "/" + prop,
                                 parentSchema: parent_schema,
                             });
                         }
@@ -524,17 +546,23 @@ class Validator
 
     /**
      * \brief Applies common patches to a schema object
+     * \param cat Category slug
+     * \param obj Class slug
+     * \param ref $ref for the object
+     * \param obj_schema Class schema
+     * \param cat_docs Category docs link
+     * \param cat_name Category title
      */
-    patch_object(obj, sub_schema, cat_docs, cat_name)
+    patch_object(cat, obj, ref, obj_schema, cat_docs, cat_name)
     {
         let obj_docs = cat_docs;
         let obj_name = cat_name;
-        if ( sub_schema.type && obj != "base-gradient" )
+        if ( obj_schema.type && obj != "base-gradient" )
         {
             obj_docs += "#" + obj;
-            obj_name = sub_schema.title || kebab_to_title(obj);
+            obj_name = obj_schema.title || kebab_to_title(obj);
         }
-        patch_docs_links(sub_schema, obj_docs, obj_name, obj_name);
+        patch_docs_links(obj_schema, obj_docs, obj_name, obj_name);
     }
 
     /**
@@ -607,10 +635,13 @@ class Validator
     {
         let errors = [];
         if ( !this._validate_internal(data) )
+        {
             errors = this._validate_internal.errors
-                .map(e => this._cleaned_error(e, data));
+                .map(e => this._cleaned_error(e, data, show_warnings))
+                .filter(e => e !== null)
+        };
 
-        return errors.filter(err => show_warnings || err.type != "warning").sort((a, b) => {
+        return errors.sort((a, b) => {
             if ( a.path < b.path )
                 return -1;
             if ( a.path > b.path )
@@ -665,25 +696,38 @@ class Validator
      * \param data Object being validated
      * \return A structured error object containing docs metadata
      */
-    _cleaned_error(error, data)
+    _cleaned_error(error, data, show_warnings)
     {
-        const path_parts = error.instancePath.split('/');
+        if ( !show_warnings && error.type === "warning" )
+            return null;
 
-        const path_names = [];
-        for ( const path_part of path_parts )
+        // There's going to be other errors on failed ifs
+        if ( error.keyword == "if" )
+            return null;
+
+        if ( error.keyword == "pattern" )
+            error.message = "doesn't match the pattern";
+
+        let path_names;
+        if ( this.name_paths )
         {
-            if ( path_part === '#' || path_part === '' )
-                continue;
-      
-            data = data[path_part];
-        
-            if ( !data )
-                break;
-      
-            // Every layer with a type may be named
-            // Push a null value if it doesn't exist so display code can handle
-            if ( data.ty )
-                path_names.push(data.nm);
+            const path_parts = error.instancePath.split("/");
+            path_names = [];
+            for ( const path_part of path_parts )
+            {
+                if ( path_part === "#" || path_part === "" )
+                    continue;
+
+                data = data[path_part];
+
+                if ( !data )
+                    break;
+
+                // Every layer with a type may be named
+                // Push a null value if it doesn't exist so display code can handle
+                if ( data.ty )
+                    path_names.push(data.nm);
+            }
         }
 
         return {
@@ -693,7 +737,7 @@ class Validator
             path: error.instancePath ?? "",
             name: error.parentSchema?._docs_name ?? "Value",
             docs: error.parentSchema?._docs,
-            path_names,
+            path_names: path_names,
         };
     }
 }
