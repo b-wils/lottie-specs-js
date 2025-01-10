@@ -269,7 +269,7 @@ function keyframe_has_t(kf)
     return typeof kf == "object" && typeof kf.t == "number";
 }
 
-class Validator
+class LottieValidator
 {
     static default_config = {
         name_paths: false,
@@ -278,7 +278,7 @@ class Validator
 
     constructor(AjvClass, schema_json, config={})
     {
-        for ( let [k, v] of Object.entries(Validator.default_config) )
+        for ( let [k, v] of Object.entries(LottieValidator.default_config) )
             if ( config[k] === undefined )
                 config[k] = v;
 
@@ -776,5 +776,5 @@ function get_schema_url(version=null, url_prefix="https://cdn.jsdelivr.net/npm/@
 // Node module exports
 if ( typeof module !== "undefined" )
 {
-    module.exports = {Validator, get_schema_path, get_schema_url};
+    module.exports = {LottieValidator, get_schema_path, get_schema_url};
 }

@@ -11,14 +11,14 @@ Node:
 ```js
 // Imports
 const ajv2020 = require("ajv/dist/2020");
-const {Validator, get_schema_path} = require("src/validator.js");
+const {LottieValidator, get_schema_path} = require("src/validator.js");
 
 // Data
 const data = {...}; // Lottie data to validate
 
 // Create validator
 const schema = JSON.parse(fs.readFileSync(get_schema_path(), "utf8"));
-const validator = new Validator(ajv2020.Ajv2020, schema);
+const validator = new LottieValidator(ajv2020.Ajv2020, schema);
 // Get errors
 const errors = validator.validate(data);
 ```
@@ -34,7 +34,7 @@ Browser:
 
     // You'll need to fetch the schema
     fetch(get_schema_url()).then( r => r.json() ).then(schema => {
-        const validator = new Validator(ajv2020.Ajv2020, schema);
+        const validator = new LottieValidator(ajv2020.Ajv2020, schema);
         const errors = validator.validate(data);
     });
 </script>
@@ -54,7 +54,7 @@ Returned error objects have the following properties:
 * `name`: Name of the object type as per the schema
 * `docs`: Link to the specs describing the object
 
-By default `Validator.validate` returns warnings, to suppress them pass `false` as second parameter.
+By default `LottieValidator.validate` returns warnings, to suppress them pass `false` as second parameter.
 
 
 ## Links

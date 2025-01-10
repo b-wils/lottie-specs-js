@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 const path = require("path");
-const {Validator, get_schema_path} = require("../src/validator.js");
+const {LottieValidator, get_schema_path} = require("../src/validator.js");
 const fs = require("fs");
 const ajv2020 = require("ajv/dist/2020");
 
@@ -58,7 +58,7 @@ if ( json_file === null )
 
 const data = fs.readFileSync(json_file, "utf8");
 const schema = JSON.parse(fs.readFileSync(schema_path, "utf8"));
-const validator = new Validator(ajv2020.Ajv2020, schema);
+const validator = new LottieValidator(ajv2020.Ajv2020, schema);
 const errors = validator.validate(data, warnings);
 console.log(JSON.stringify(errors, null, 4));
 if ( errors.find(e => e.type == "error") )
