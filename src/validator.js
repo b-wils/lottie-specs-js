@@ -754,16 +754,6 @@ function schema_file_name(version=null)
 }
 
 /**
- * \returns File path to the schema
- * \pre Running on node
- */
-function get_schema_path(version=null)
-{
-    const path = require("path");
-    return path.resolve(__dirname, "data", schema_file_name(version));
-}
-
-/**
  * \returns URL of the schema
  * \param url_prefix CDN to use
  */
@@ -772,9 +762,8 @@ function get_schema_url(version=null, url_prefix="https://cdn.jsdelivr.net/npm/@
     return url_prefix + schema_file_name(version);
 }
 
-
 // Node module exports
 if ( typeof module !== "undefined" )
 {
-    module.exports = {LottieValidator, get_schema_path, get_schema_url};
+    module.exports = {LottieValidator, get_schema_url, schema_file_name};
 }
