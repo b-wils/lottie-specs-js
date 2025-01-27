@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 const path = require("path");
-const {LottieValidator, get_schema_path} = require("../src/node.js");
+const {LottieValidator, get_schema_path} = require("../src/validator-node.js");
 const fs = require("fs");
 const ajv2020 = require("ajv/dist/2020");
 

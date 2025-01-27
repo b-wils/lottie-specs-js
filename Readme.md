@@ -11,7 +11,7 @@ Node:
 ```js
 // Imports
 const ajv2020 = require("ajv/dist/2020");
-const {LottieValidator, get_schema_path} = require("src/node.js");
+const {LottieValidator, get_schema_path} = require("src/validator-node.js");
 
 // Data
 const data = {...}; // Lottie data to validate
