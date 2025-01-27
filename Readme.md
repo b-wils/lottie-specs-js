@@ -11,7 +11,7 @@ Node:
 ```js
 // Imports
 const ajv2020 = require("ajv/dist/2020");
-const {LottieValidator, get_schema_path} = require("src/validator.js");
+const {LottieValidator, get_schema_path} = require("src/validator-node.js");
 
 // Data
 const data = {...}; // Lottie data to validate
@@ -40,6 +40,13 @@ Browser:
 </script>
 ```
 
+## Configuration
+
+LottieValidator takes an optional second argument for configuration.
+These settings are:
+
+* `name_paths`: whether to extract the user specified names from JSON path (default: false) 
+* `docs_url`: Base url for information on errors (default: "https://lottie.github.io/lottie-spec/latest")
 
 ### Returned Errors
 
@@ -51,6 +58,7 @@ Returned error objects have the following properties:
     * `"property"` whether it's an unknown property
 * `message`: Human readable message
 * `path`: JSON path to the object causing the error (empty string refers to the top-level object)
+* `path_names`: User specified list of names from each level where they are available in the JSON path (if enabled)
 * `name`: Name of the object type as per the schema
 * `docs`: Link to the specs describing the object
 
